@@ -199,9 +199,9 @@ def plot_lyapunov_3d(model, x_range=(-delta_range, delta_range), y_range=(-x_int
     z_min = V_vals.min()
     ax1.contour(Delta, Omega, V_vals, levels=12, zdir='z', offset=z_min,
                 cmap='RdBu_r', alpha=0.8, linewidths=1)
-    ax1.set_xlabel('δ')
-    ax1.set_ylabel('x')
-    ax1.set_zlabel('V')
+    ax1.set_xlabel(r'$\delta$', fontsize=14, fontname='Times New Roman')
+    ax1.set_ylabel(r'$x_{int}$', fontsize=14, fontname='Times New Roman')
+    ax1.set_zlabel(r'$V$', fontsize=14, fontname='Times New Roman')
     ax1.set_title('Learned Lyapunov Function V')
     fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=5)
 
@@ -215,7 +215,8 @@ def plot_lyapunov_3d(model, x_range=(-delta_range, delta_range), y_range=(-x_int
     fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=5)
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
+    return fig
 
 
 def integrate_trajectory(x0, t_span=(0, 10), t_eval=None):
@@ -262,14 +263,14 @@ def plot_ROA(V_net, d_star, a=delta_range, b=x_int_range,
     with torch.no_grad():
         V_grid = V_net(points).numpy().reshape(Delta.shape)
 
-    plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(10, 6))
     # 颜色图（整个矩形区域）
     im = plt.pcolormesh(Delta, Omega, V_grid, shading='auto', cmap='RdBu_r')
-    plt.colorbar(im, label='V(δ, ω)')
+    #plt.colorbar(im, label='V(δ, ω)')
 
     # 稳定域边界（红色等高线）
     contour = plt.contour(Delta, Omega, V_grid, levels=[d_star], colors='red', linewidths=2, linestyles='-')
-    plt.clabel(contour, inline=True, fontsize=10, fmt=f'V = {d_star:.4f}')
+    plt.clabel(contour, inline=True, fontsize=10, fmt=rf'$V(\delta, x_{{int}}) = {d_star:.4f}$')
     # d1 = 1.5*d_star
     # contour = plt.contour(Delta, Omega, V_grid, levels=[d1], colors='red', linewidths=2, linestyles='-')
     # plt.clabel(contour, inline=True, fontsize=10, fmt=f'V = {d1:.4f}')
@@ -289,19 +290,22 @@ def plot_ROA(V_net, d_star, a=delta_range, b=x_int_range,
     # plt.plot(initial_point[0], initial_point[1], 'black', markersize=8, label='Start point')
 
     traj1 = backward()
-    plt.plot(traj1[:, 0], traj1[:, 1], 'k-', lw=1.5)
+    plt.plot(traj1[:, 0], traj1[:, 1], 'k--', lw=1)
 
     plt.xlim(x_range)
     plt.ylim(y_range)
-    plt.xlabel('δ (rad)')
-    plt.ylabel('x p.u.')
-    plt.title(f'Stability Region (V < {d_star:.6f}) and Sampling Ellipse')
+    plt.xlabel(r'$\delta$ (rad)', fontsize=14, fontname='Times New Roman')
+    plt.ylabel(r'$x_{int}$ (pu)', fontsize=14, fontname='Times New Roman')
+    cbar = plt.colorbar(im)
+    cbar.set_label(r'$V$', fontsize=14, fontname='Times New Roman')
+    plt.title('Estimated Stability Region ($V < 0.0473$)')
     plt.grid(alpha=0.3)
     # plt.legend()
     plt.tight_layout()
     ax = plt.gca()
     ax.xaxis.set_major_locator(ticker.MultipleLocator(base=np.pi / 2))
-    plt.show()
+    #plt.show()
+    return fig
 
 
 def compute_V_at_point(V_net, delta, omega):
@@ -321,22 +325,24 @@ def compute_V_at_point(V_net, delta, omega):
 if __name__ == "__main__":
     # 初始化模型和优化器
     model = LyapunovNN(hidden_dim=32)
-    # model = ICNN(hidden_dims=[16, 16])
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
-    # 训练
     print("开始训练神经 Lyapunov 函数...")
     loss_hist = train_lyapunov(model, optimizer, n_epochs=910,
-                               alpha=0.9, beta=0.8, gamma=2.4, a=1.0 , b=0.01 , c=0.01)
-    # plt.plot(loss_hist)
-    # plt.xlabel('Epoch')
-    # plt.ylabel('Loss')
-    # plt.title('Training Loss')
-    # plt.show()
+                               alpha=0.9, beta=0.8, gamma=2.4, a=1.0, b=0.01, c=0.01)
 
-    # 可视化
-    # plot_lyapunov_3d(model)
+    # 先算 d_star
     delta_val = delta_uep
     x_val = x_eq
-    d_star = 0.9766*compute_V_at_point(model, delta_val, x_val)
-    plot_ROA(model, d_star, a=delta_range, b=x_int_range)
+    d_star = 0.9766 * compute_V_at_point(model, delta_val, x_val)
+
+    # 保存 3D 图
+    fig1 = plot_lyapunov_3d(model)
+    fig1.savefig('lyapunov_3d.png', dpi=600, bbox_inches='tight')
+    plt.show()
+
+    # 保存 ROA 图
+    print("准备画 ROA 图...")
+    fig2 = plot_ROA(model, d_star, a=delta_range, b=x_int_range)
+    fig2.savefig('roa.png', dpi=600, bbox_inches='tight')
+    plt.show()
