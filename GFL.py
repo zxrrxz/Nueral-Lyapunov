@@ -121,6 +121,37 @@ def lyapunov_loss(model, x, dx, alpha, beta, gamma, a, b, c):
     loss = alpha * pos_def.mean() + beta * neg_def.mean() + gamma * zero_penalty + a*roa_term
     return loss
 
+def verify(V_net, x1_range=(-delta_range, delta_range), x2_range=(-x_int_range, x_int_range), grid_size=50, eps=1e-5):
+    """在网格上验证 Lyapunov 条件，返回 (是否有效, 违反点列表)"""
+    x1 = torch.linspace(x1_range[0], x1_range[1], grid_size)
+    x2 = torch.linspace(x2_range[0], x2_range[1], grid_size)
+    X1, X2 = torch.meshgrid(x1, x2, indexing='ij')
+    x_vals = torch.stack([X1.ravel(), X2.ravel()], dim=1)  # (N,2)
+
+    # 计算 V 值（无梯度）
+    with torch.no_grad():
+        V_vals = V_net(x_vals).numpy()
+
+    # 计算李导数（需要梯度）
+    x_grad = x_vals.clone().detach().requires_grad_(True)
+    V_grad = V_net(x_grad)
+    gradV = torch.autograd.grad(V_grad.sum(), x_grad, create_graph=False)[0]
+    fx = f(x_grad)  # 调用之前定义的动力学函数
+    lie = (gradV * fx).sum(dim=1).detach().numpy()
+
+    # 忽略原点附近点
+    x_np = x_vals.numpy()
+    mask = (np.abs(x_np[:, 0]) > eps) | (np.abs(x_np[:, 1]) > eps)
+
+    violation_pos = (V_vals[mask] <= 0)
+    violation_der = (lie[mask] >= 0)
+    if np.any(violation_pos) or np.any(violation_der):
+        # 收集所有违反点
+        x_viol = x_vals[mask][violation_pos | violation_der]
+        return False, x_viol
+    else:
+        return True, None
+
 # ------------------------------
 # 5. 训练过程
 # ------------------------------
@@ -295,7 +326,7 @@ if __name__ == "__main__":
 
     # 训练
     print("开始训练神经 Lyapunov 函数...")
-    loss_hist = train_lyapunov(model, optimizer, n_epochs=900,
+    loss_hist = train_lyapunov(model, optimizer, n_epochs=910,
                                alpha=0.9, beta=0.8, gamma=2.4, a=1.0 , b=0.01 , c=0.01)
     # plt.plot(loss_hist)
     # plt.xlabel('Epoch')
@@ -304,8 +335,8 @@ if __name__ == "__main__":
     # plt.show()
 
     # 可视化
-    plot_lyapunov_3d(model)
+    # plot_lyapunov_3d(model)
     delta_val = delta_uep
     x_val = x_eq
-    d_star = 0.9*compute_V_at_point(model, delta_val, x_val)
+    d_star = 0.9766*compute_V_at_point(model, delta_val, x_val)
     plot_ROA(model, d_star, a=delta_range, b=x_int_range)
